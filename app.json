@@ -39,6 +39,15 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "4f2f974c-5a72-477d-9cda-21dce368e59d"
+      }
+    },
+    "owner": "williamsoto"
   }
 }
