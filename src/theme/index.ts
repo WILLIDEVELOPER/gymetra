@@ -80,29 +80,40 @@ export const fontSize = {
   '5xl': 40,
 } as const;
 
+import { Platform } from 'react-native';
+
 export const shadows = {
-  sm: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  md: {
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  lg: {
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 10,
-  },
-} as const;
+  sm: Platform.select({
+    web: { boxShadow: '0 1px 3px rgba(0,0,0,0.3)' } as any,
+    default: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.3,
+      shadowRadius: 3,
+      elevation: 2,
+    },
+  })!,
+  md: Platform.select({
+    web: { boxShadow: '0 4px 8px rgba(59,130,246,0.15)' } as any,
+    default: {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      elevation: 5,
+    },
+  })!,
+  lg: Platform.select({
+    web: { boxShadow: '0 8px 16px rgba(59,130,246,0.2)' } as any,
+    default: {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.2,
+      shadowRadius: 16,
+      elevation: 10,
+    },
+  })!,
+};
 
 // Gradientes para uso con LinearGradient
 export const gradients = {

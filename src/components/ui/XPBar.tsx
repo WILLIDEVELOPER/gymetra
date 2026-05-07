@@ -2,7 +2,6 @@ import React from 'react';
 import { View, Text } from 'react-native';
 import { ProgressBar } from './ProgressBar';
 import { colors, fontSize, radius } from '../../theme';
-import { getLevelTitle, levelColors } from '../../domain/models';
 
 interface XPBarProps {
   level: number;
@@ -11,13 +10,31 @@ interface XPBarProps {
   compact?: boolean;
 }
 
+const LEVEL_COLORS = [
+  '#64748B', // 1-5  Novato
+  '#3B82F6', // 6-10 Atleta
+  '#8B5CF6', // 11-20 Guerrero
+  '#F59E0B', // 21-30 Élite
+  '#EF4444', // 31-50 Leyenda
+  '#EC4899', // 51+  Mítico
+];
+
 function getLevelColor(level: number): string {
-  if (level <= 5)  return levelColors[0];
-  if (level <= 10) return levelColors[1];
-  if (level <= 20) return levelColors[2];
-  if (level <= 30) return levelColors[3];
-  if (level <= 50) return levelColors[4];
-  return levelColors[5];
+  if (level <= 5)  return LEVEL_COLORS[0];
+  if (level <= 10) return LEVEL_COLORS[1];
+  if (level <= 20) return LEVEL_COLORS[2];
+  if (level <= 30) return LEVEL_COLORS[3];
+  if (level <= 50) return LEVEL_COLORS[4];
+  return LEVEL_COLORS[5];
+}
+
+function getLevelTitle(level: number): string {
+  if (level <= 5)  return 'Novato';
+  if (level <= 10) return 'Atleta';
+  if (level <= 20) return 'Guerrero';
+  if (level <= 30) return 'Élite';
+  if (level <= 50) return 'Leyenda';
+  return 'Mítico';
 }
 
 export function XPBar({ level, xp, xpToNext, compact = false }: XPBarProps) {
