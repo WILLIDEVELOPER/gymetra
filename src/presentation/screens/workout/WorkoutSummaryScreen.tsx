@@ -121,7 +121,7 @@ export function WorkoutSummaryScreen() {
         </View>
 
         <TouchableOpacity
-          onPress={() => nav.navigate('Tabs' as any)}
+          onPress={() => (nav as any).navigate('Tabs')}
           style={{
             height: 50, borderRadius: radius.md,
             backgroundColor: colors.brand[600],

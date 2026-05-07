@@ -3,6 +3,8 @@ import { WorkoutRepository } from '../infrastructure/repositories/WorkoutReposit
 import { PRRepository } from '../infrastructure/repositories/PRRepository';
 import { RoutineRepository } from '../infrastructure/repositories/RoutineRepository';
 import { UserRepository } from '../infrastructure/repositories/UserRepository';
+import { AchievementRepository } from '../infrastructure/repositories/AchievementRepository';
+import { useAchievementStore } from './useAchievementStore';
 import type { Workout, WorkoutSummary, ExerciseSet, Routine } from '../domain/models';
 import { XP_REWARDS } from '../domain/models';
 
@@ -11,12 +13,15 @@ interface WorkoutState {
   history: WorkoutSummary[];
   isLoading: boolean;
   error: string | null;
+  lastCompletedId: string | null;
   // Actions
   startWorkout: (name: string, routine?: Routine) => Promise<Workout>;
-  addExerciseToWorkout: (exerciseId: string) => Promise<void>;
+  addExerciseToWorkout: (exerciseId: string, variationId?: string) => Promise<void>;
   addSet: (workoutExerciseId: string, set: Omit<ExerciseSet, 'id'>) => Promise<void>;
   updateSet: (setId: string, data: Partial<ExerciseSet>) => Promise<void>;
-  completeWorkout: (opts?: { rating?: number; notes?: string }) => Promise<{ xpEarned: number; newPRs: number }>;
+  completeWorkout: (opts?: { rating?: number; notes?: string }) => Promise<{
+    xpEarned: number; newPRs: number; unlockedAchievements: number;
+  }>;
   cancelWorkout: () => Promise<void>;
   loadHistory: (limit?: number) => Promise<void>;
   resumeInProgress: () => Promise<void>;
@@ -28,10 +33,16 @@ function calcVolume(sets: ExerciseSet[]): number {
     .reduce((sum, s) => sum + s.weight * s.reps, 0);
 }
 
-// Brzycki 1RM formula
 function estimate1RM(weight: number, reps: number): number {
   if (reps === 1) return weight;
   return weight / (1.0278 - 0.0278 * reps);
+}
+
+function getWeekStartFromTimestamp(ts: number): number {
+  const d = new Date(ts);
+  const day = d.getDay(); // 0=Sun
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // lunes
+  return new Date(d.setDate(diff)).setHours(0, 0, 0, 0);
 }
 
 export const useWorkoutStore = create<WorkoutState>((set, get) => ({
@@ -39,6 +50,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   history: [],
   isLoading: false,
   error: null,
+  lastCompletedId: null,
 
   startWorkout: async (name, routine) => {
     const id = await WorkoutRepository.create({
@@ -54,7 +66,6 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       xpEarned: 0,
     });
 
-    // Pre-cargar ejercicios de la rutina
     if (routine) {
       for (let i = 0; i < routine.exercises.length; i++) {
         await WorkoutRepository.addExercise(id, routine.exercises[i].exerciseId, i);
@@ -66,17 +77,17 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     return workout!;
   },
 
-  addExerciseToWorkout: async (exerciseId) => {
+  addExerciseToWorkout: async (exerciseId, variationId) => {
     const { activeWorkout } = get();
     if (!activeWorkout) return;
     const idx = activeWorkout.exercises.length;
-    const weId = await WorkoutRepository.addExercise(activeWorkout.id, exerciseId, idx);
+    const weId = await WorkoutRepository.addExercise(activeWorkout.id, exerciseId, idx, variationId);
     set((s) => ({
       activeWorkout: s.activeWorkout ? {
         ...s.activeWorkout,
         exercises: [...s.activeWorkout.exercises, {
           id: weId, workoutId: s.activeWorkout.id,
-          exerciseId, orderIndex: idx, sets: [],
+          exerciseId, variationId, orderIndex: idx, sets: [],
         }],
       } : null,
     }));
@@ -133,14 +144,12 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
 
     // Detectar PRs por ejercicio
     for (const we of activeWorkout.exercises) {
-      const exerciseSets = we.sets.filter((s) => s.completed && !s.isWarmup);
+      const exerciseSets = we.sets.filter((s) => s.completed && !s.isWarmup && s.weight > 0);
       if (exerciseSets.length === 0) continue;
 
       const maxWeight = Math.max(...exerciseSets.map((s) => s.weight));
       const maxReps   = Math.max(...exerciseSets.map((s) => s.reps));
-      const exerciseVolume = calcVolume(exerciseSets);
-      const best1rm = Math.max(...exerciseSets.map((s) => estimate1RM(s.weight, s.reps)));
-
+      const best1rm   = Math.max(...exerciseSets.map((s) => estimate1RM(s.weight, s.reps)));
       const exerciseName = we.exercise?.name ?? we.exerciseId;
 
       const isPR1 = await PRRepository.upsertPR({
@@ -167,27 +176,92 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     });
 
     // Actualizar stats del usuario
+    const currentUser = await UserRepository.getOrCreate();
+    const newTotalWorkouts = currentUser.totalWorkouts + 1;
+    const newTotalVolume   = currentUser.totalVolume + totalVolume;
+    const newTotalDuration = currentUser.totalDuration + durationSeconds;
+
+    // Actualizar racha
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const todayTs = today.getTime();
+    const lastDate = currentUser.lastWorkoutDate
+      ? new Date(currentUser.lastWorkoutDate)
+      : null;
+    lastDate?.setHours(0, 0, 0, 0);
+    const lastTs = lastDate?.getTime() ?? 0;
+    const yesterdayTs = todayTs - 86400000;
+
+    let newStreak = currentUser.currentStreak;
+    if (lastTs === yesterdayTs) {
+      newStreak = currentUser.currentStreak + 1;
+    } else if (lastTs !== todayTs) {
+      newStreak = 1;
+    }
+    const newLongest = Math.max(currentUser.longestStreak, newStreak);
+
+    // Recalcular stats RPG dinámicos
+    const strengthInc = newPRs > 0 ? Math.min(2, newPRs) : 0;
+    const newStrength = Math.min(100, currentUser.stats.strength + strengthInc);
+    const discipInc   = 1; // por cada workout completado
+    const newDiscipline = Math.min(100, currentUser.stats.discipline + discipInc);
+    const consisVal   = Math.min(100, Math.floor((newStreak / 30) * 100));
+    const volumeTotal = newTotalVolume / 1000; // kg → toneladas
+
     await UserRepository.update({
-      totalWorkouts: undefined, // se incrementará vía DB
-      totalVolume: undefined,
-      totalDuration: undefined,
-    });
-    const updatedUser = await UserRepository.getOrCreate();
-    await UserRepository.update({
-      totalWorkouts: updatedUser.totalWorkouts + 1,
-      totalVolume: updatedUser.totalVolume + totalVolume,
-      totalDuration: updatedUser.totalDuration + durationSeconds,
+      totalWorkouts: newTotalWorkouts,
+      totalVolume: newTotalVolume,
+      totalDuration: newTotalDuration,
       lastWorkoutDate: now,
+      currentStreak: newStreak,
+      longestStreak: newLongest,
+      stats: {
+        strength: newStrength,
+        discipline: newDiscipline,
+        consistency: consisVal,
+        volume: volumeTotal,
+      },
     });
 
     if (activeWorkout.routineId) {
       await RoutineRepository.incrementTimesCompleted(activeWorkout.routineId);
     }
 
-    await UserRepository.addXp(xpEarned);
+    const { leveledUp } = await UserRepository.addXp(xpEarned);
+    if (leveledUp) {
+      xpEarned += XP_REWARDS.STREAK_BONUS; // bonus por nivel
+    }
 
-    set({ activeWorkout: null });
-    return { xpEarned, newPRs };
+    // Verificar logros
+    const updatedUser = await UserRepository.getOrCreate();
+    const totalPRsEver = await AchievementRepository.getTotalPRs();
+    const muscleGroupsCareer = await AchievementRepository.getDistinctMuscleGroupsCareer();
+    const weekStart = getWeekStartFromTimestamp(now);
+    const workoutsThisWeek = await AchievementRepository.getWorkoutsThisWeek(weekStart);
+
+    const muscleGroupsThisSession = [...new Set(
+      activeWorkout.exercises.map((we) => we.exercise?.muscleGroup ?? 'other')
+    )];
+
+    const ctx = {
+      totalWorkouts: newTotalWorkouts,
+      currentStreak: newStreak,
+      totalPRsEver,
+      newPRsThisSession: newPRs,
+      sessionVolume: totalVolume,
+      totalVolumeCareer: newTotalVolume,
+      currentLevel: updatedUser.level,
+      sessionDurationSeconds: durationSeconds,
+      sessionStartHour: new Date(activeWorkout.startedAt).getHours(),
+      muscleGroupsThisSession,
+      workoutsThisWeek,
+      muscleGroupsCareer,
+    };
+
+    const unlockedAchievements = await useAchievementStore.getState().checkAchievements(ctx);
+
+    set({ activeWorkout: null, lastCompletedId: activeWorkout.id });
+    return { xpEarned, newPRs, unlockedAchievements: unlockedAchievements.length };
   },
 
   cancelWorkout: async () => {
@@ -215,3 +289,11 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     if (workout) set({ activeWorkout: workout });
   },
 }));
+
+// Re-export helper para uso externo
+export function getWeekStart(): number {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff)).setHours(0, 0, 0, 0);
+}

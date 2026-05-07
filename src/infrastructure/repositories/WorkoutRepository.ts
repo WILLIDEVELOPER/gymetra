@@ -16,6 +16,7 @@ interface WorkoutRow {
 interface WorkoutExerciseRow {
   id: string; workout_id: string; exercise_id: string;
   order_index: number; notes: string | null;
+  variation_id: string | null;
 }
 
 interface ExerciseSetRow {
@@ -24,6 +25,9 @@ interface ExerciseSetRow {
   rpe: number | null; tempo: string | null; tut: number | null;
   rest_seconds: number; is_warmup: number; is_dropset: number;
   completed: number; notes: string | null;
+  duration_seconds: number | null;
+  distance_meters: number | null;
+  calories: number | null;
 }
 
 function rowToWorkout(row: WorkoutRow, exercises: WorkoutExercise[] = []): Workout {
@@ -48,6 +52,9 @@ function rowToSet(row: ExerciseSetRow): ExerciseSet {
     tut: row.tut ?? undefined, restSeconds: row.rest_seconds,
     isWarmup: row.is_warmup === 1, isDropset: row.is_dropset === 1,
     completed: row.completed === 1, notes: row.notes ?? undefined,
+    durationSeconds: row.duration_seconds ?? undefined,
+    distanceMeters: row.distance_meters ?? undefined,
+    calories: row.calories ?? undefined,
   };
 }
 
@@ -73,12 +80,17 @@ export const WorkoutRepository = {
     return id;
   },
 
-  async addExercise(workoutId: string, exerciseId: string, orderIndex: number): Promise<string> {
+  async addExercise(
+    workoutId: string,
+    exerciseId: string,
+    orderIndex: number,
+    variationId?: string
+  ): Promise<string> {
     const db = await getDatabase();
     const id = uuid.v4() as string;
     await db.runAsync(
-      'INSERT INTO workout_exercises (id, workout_id, exercise_id, order_index) VALUES (?, ?, ?, ?)',
-      [id, workoutId, exerciseId, orderIndex]
+      'INSERT INTO workout_exercises (id, workout_id, exercise_id, order_index, variation_id) VALUES (?, ?, ?, ?, ?)',
+      [id, workoutId, exerciseId, orderIndex, variationId ?? null]
     );
     return id;
   },
@@ -89,8 +101,9 @@ export const WorkoutRepository = {
     await db.runAsync(
       `INSERT INTO exercise_sets
         (id, workout_exercise_id, set_number, weight, reps, rir, rpe,
-         tempo, tut, rest_seconds, is_warmup, is_dropset, completed, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         tempo, tut, rest_seconds, is_warmup, is_dropset, completed, notes,
+         duration_seconds, distance_meters, calories)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, data.workoutExerciseId, data.setNumber,
         data.weight, data.reps, data.rir,
@@ -98,6 +111,9 @@ export const WorkoutRepository = {
         data.restSeconds, data.isWarmup ? 1 : 0,
         data.isDropset ? 1 : 0, data.completed ? 1 : 0,
         data.notes ?? null,
+        data.durationSeconds ?? null,
+        data.distanceMeters ?? null,
+        data.calories ?? null,
       ]
     );
     return id;
@@ -107,12 +123,15 @@ export const WorkoutRepository = {
     const db = await getDatabase();
     await db.runAsync(
       `UPDATE exercise_sets SET
-        weight    = COALESCE(?, weight),
-        reps      = COALESCE(?, reps),
-        rir       = COALESCE(?, rir),
-        rpe       = COALESCE(?, rpe),
-        completed = COALESCE(?, completed),
-        notes     = COALESCE(?, notes)
+        weight           = COALESCE(?, weight),
+        reps             = COALESCE(?, reps),
+        rir              = COALESCE(?, rir),
+        rpe              = COALESCE(?, rpe),
+        completed        = COALESCE(?, completed),
+        notes            = COALESCE(?, notes),
+        duration_seconds = COALESCE(?, duration_seconds),
+        distance_meters  = COALESCE(?, distance_meters),
+        calories         = COALESCE(?, calories)
        WHERE id = ?`,
       [
         data.weight ?? null,
@@ -121,6 +140,9 @@ export const WorkoutRepository = {
         data.rpe ?? null,
         data.completed !== undefined ? (data.completed ? 1 : 0) : null,
         data.notes ?? null,
+        data.durationSeconds ?? null,
+        data.distanceMeters ?? null,
+        data.calories ?? null,
         id,
       ]
     );
@@ -163,6 +185,7 @@ export const WorkoutRepository = {
         );
         return {
           id: we.id, workoutId: we.workout_id, exerciseId: we.exercise_id,
+          variationId: we.variation_id ?? undefined,
           orderIndex: we.order_index, notes: we.notes ?? undefined,
           sets: sets.map(rowToSet),
         };
@@ -212,11 +235,15 @@ export const WorkoutRepository = {
       workout_exercise_id: string; rpe: number | null;
       tempo: string | null; tut: number | null; rest_seconds: number;
       is_dropset: number; notes: string | null;
+      duration_seconds: number | null;
+      distance_meters: number | null;
+      calories: number | null;
     }>(
       `SELECT w.id as workout_id, w.started_at,
               s.id as set_id, s.weight, s.reps, s.rir, s.is_warmup,
               s.completed, s.set_number, s.workout_exercise_id,
-              s.rpe, s.tempo, s.tut, s.rest_seconds, s.is_dropset, s.notes
+              s.rpe, s.tempo, s.tut, s.rest_seconds, s.is_dropset, s.notes,
+              s.duration_seconds, s.distance_meters, s.calories
        FROM workouts w
        JOIN workout_exercises we ON we.workout_id = w.id
        JOIN exercise_sets s ON s.workout_exercise_id = we.id
@@ -238,6 +265,9 @@ export const WorkoutRepository = {
         tut: r.tut ?? undefined, restSeconds: r.rest_seconds,
         isWarmup: r.is_warmup === 1, isDropset: r.is_dropset === 1,
         completed: r.completed === 1, notes: r.notes ?? undefined,
+        durationSeconds: r.duration_seconds ?? undefined,
+        distanceMeters: r.distance_meters ?? undefined,
+        calories: r.calories ?? undefined,
       });
     }
     return Array.from(grouped.values());
@@ -267,5 +297,50 @@ export const WorkoutRepository = {
       totalDuration: row?.total_duration ?? 0,
       xpEarned: row?.xp_earned ?? 0,
     };
+  },
+
+  // Obtiene el volumen por grupo muscular en el período dado
+  async getMuscleGroupVolume(since: number): Promise<Record<string, number>> {
+    const db = await getDatabase();
+    const rows = await db.getAllAsync<{ muscle_group: string; volume: number }>(
+      `SELECT e.muscle_group, COALESCE(SUM(s.weight * s.reps), 0) as volume
+       FROM workouts w
+       JOIN workout_exercises we ON we.workout_id = w.id
+       JOIN exercises e ON e.id = we.exercise_id
+       JOIN exercise_sets s ON s.workout_exercise_id = we.id
+       WHERE w.status = 'completed' AND w.started_at >= ? AND s.is_warmup = 0 AND s.completed = 1
+       GROUP BY e.muscle_group`,
+      [since]
+    );
+    return Object.fromEntries(rows.map((r) => [r.muscle_group, r.volume]));
+  },
+
+  // Historial de workouts para heatmap (últimos N días)
+  async getWorkoutDates(daysBack = 90): Promise<number[]> {
+    const db = await getDatabase();
+    const since = Date.now() - daysBack * 24 * 60 * 60 * 1000;
+    const rows = await db.getAllAsync<{ started_at: number }>(
+      `SELECT started_at FROM workouts WHERE status = 'completed' AND started_at >= ? ORDER BY started_at ASC`,
+      [since]
+    );
+    return rows.map((r) => r.started_at);
+  },
+
+  // Estadísticas de las últimas 8 semanas para gráfica de barras
+  async getLast8WeeksStats(): Promise<Array<{ weekStart: number; count: number; volume: number }>> {
+    const db = await getDatabase();
+    const results = [];
+    const now = Date.now();
+    for (let i = 7; i >= 0; i--) {
+      const weekStart = now - i * 7 * 24 * 60 * 60 * 1000;
+      const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
+      const row = await db.getFirstAsync<{ count: number; volume: number }>(
+        `SELECT COUNT(*) as count, COALESCE(SUM(total_volume), 0) as volume
+         FROM workouts WHERE status = 'completed' AND started_at >= ? AND started_at < ?`,
+        [weekStart, weekEnd]
+      );
+      results.push({ weekStart, count: row?.count ?? 0, volume: row?.volume ?? 0 });
+    }
+    return results;
   },
 };

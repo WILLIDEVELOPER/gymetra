@@ -152,4 +152,76 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_prs_exercise       ON personal_records(exercise_id);
     `,
   },
+
+  // v2: variaciones de ejercicios, tipos de ejercicio, logros, campos extra en sets
+  {
+    version: 2,
+    sql: `
+      -- Tipo de ejercicio en catálogo (weight | duration | bodyweight)
+      ALTER TABLE exercises ADD COLUMN exercise_type TEXT NOT NULL DEFAULT 'weight';
+
+      -- Variaciones de ejercicios (Jalón agarre abierto, cerrado, neutro, etc.)
+      CREATE TABLE IF NOT EXISTS exercise_variations (
+        id          TEXT PRIMARY KEY,
+        exercise_id TEXT NOT NULL,
+        name        TEXT NOT NULL,
+        icon_name   TEXT NOT NULL DEFAULT 'barbell-outline',
+        description TEXT,
+        is_default  INTEGER NOT NULL DEFAULT 0,
+        created_at  INTEGER NOT NULL,
+        FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_var_exercise ON exercise_variations(exercise_id);
+
+      -- Variación elegida en cada ejercicio del workout
+      ALTER TABLE workout_exercises ADD COLUMN variation_id TEXT;
+
+      -- Campos extra para ejercicios de duración/cardio
+      ALTER TABLE exercise_sets ADD COLUMN duration_seconds INTEGER;
+      ALTER TABLE exercise_sets ADD COLUMN distance_meters  REAL;
+      ALTER TABLE exercise_sets ADD COLUMN calories         INTEGER;
+
+      -- Variación en records personales (PR por variación independiente)
+      ALTER TABLE personal_records ADD COLUMN variation_id TEXT;
+
+      -- Sistema de logros gamificados
+      CREATE TABLE IF NOT EXISTS achievements (
+        id            TEXT PRIMARY KEY,
+        code          TEXT UNIQUE NOT NULL,
+        title         TEXT NOT NULL,
+        description   TEXT NOT NULL,
+        icon_name     TEXT NOT NULL DEFAULT 'trophy-outline',
+        xp_reward     INTEGER NOT NULL DEFAULT 0,
+        unlocked      INTEGER NOT NULL DEFAULT 0,
+        unlocked_at   INTEGER,
+        progress      REAL NOT NULL DEFAULT 0,
+        max_progress  REAL NOT NULL DEFAULT 1
+      );
+
+      -- Seed inicial de logros
+      INSERT OR IGNORE INTO achievements
+        (id, code, title, description, icon_name, xp_reward, max_progress)
+      VALUES
+        ('ach-001','FIRST_WORKOUT',     'Primera Sesión',         'Completa tu primer entrenamiento',               'fitness-outline',   50,  1),
+        ('ach-002','STREAK_7',          'Racha de Fuego',         'Mantén una racha de 7 días consecutivos',        'flame-outline',    100,  7),
+        ('ach-003','STREAK_30',         'Mes de Hierro',          'Mantén una racha de 30 días consecutivos',       'flame',            300, 30),
+        ('ach-004','WORKOUTS_10',       'Atleta Dedicado',        'Completa 10 entrenamientos',                     'barbell-outline',   75, 10),
+        ('ach-005','WORKOUTS_50',       'Guerrero del Gym',       'Completa 50 entrenamientos',                     'shield-outline',   200, 50),
+        ('ach-006','WORKOUTS_100',      'Centurión',              'Completa 100 entrenamientos',                    'trophy-outline',   500,100),
+        ('ach-007','FIRST_PR',          'Primer Récord',          'Rompe tu primer récord personal',                'star-outline',      50,  1),
+        ('ach-008','PRS_10',            'Máquina de PRs',         'Rompe 10 récords personales',                    'star',             150, 10),
+        ('ach-009','VOLUME_1T',         'Una Tonelada',           'Levanta 1 000 kg en un solo entrenamiento',      'barbell',          100,  1),
+        ('ach-010','VOLUME_TOTAL_100T', 'Élite del Volumen',      'Acumula 100 000 kg en toda tu carrera',          'trending-up',      400,  1),
+        ('ach-011','LEVEL_5',           'En el Camino',           'Alcanza el nivel 5',                             'ribbon-outline',   100,  1),
+        ('ach-012','LEVEL_10',          'Atleta de Hierro',       'Alcanza el nivel 10',                            'ribbon',           250,  1),
+        ('ach-013','FIRST_LEGS',        'No Saltar Piernas',      'Completa un entrenamiento de piernas',           'walk-outline',      50,  1),
+        ('ach-014','EARLY_BIRD',        'Madrugador',             'Entrena antes de las 7:00 am',                   'sunny-outline',     75,  1),
+        ('ach-015','NIGHT_OWL',         'Búho Nocturno',          'Entrena después de las 10:00 pm',                'moon-outline',      75,  1),
+        ('ach-016','STREAK_3',          'Tres en Raya',           'Entrena 3 días seguidos',                        'flash-outline',     30,  3),
+        ('ach-017','WORKOUTS_5',        'Calentando Motores',     'Completa 5 entrenamientos',                      'walk-outline',      30,  5),
+        ('ach-018','LONG_SESSION',      'Maratón de Hierro',      'Entrena más de 90 minutos en una sesión',        'timer-outline',    100,  1),
+        ('ach-019','PERFECT_WEEK',      'Semana Perfecta',        'Entrena 5 o más días en la misma semana',        'calendar-outline', 150,  5),
+        ('ach-020','VARIETY',           'Explorador',             'Entrena 5 grupos musculares distintos',          'grid-outline',     100,  5);
+    `,
+  },
 ];

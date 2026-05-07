@@ -1,7 +1,7 @@
 import { ExerciseRepository } from '../repositories/ExerciseRepository';
 import type { Exercise } from '../../domain/models';
 
-const SEED_EXERCISES: Omit<Exercise, 'createdAt' | 'updatedAt'>[] = [
+const SEED_EXERCISES: Omit<Exercise, 'createdAt' | 'updatedAt' | 'exerciseType'>[] = [
   // PECHO
   { id: 'ex-001', name: 'Press de Banca', muscleGroup: 'chest', secondaryMuscles: ['shoulders', 'triceps'], equipment: 'barbell', category: 'compound', isCustom: false, instructions: 'Acostado en el banco, baja la barra controladamente al pecho y empuja hacia arriba.' },
   { id: 'ex-002', name: 'Press Inclinado con Barra', muscleGroup: 'chest', secondaryMuscles: ['shoulders', 'triceps'], equipment: 'barbell', category: 'compound', isCustom: false },

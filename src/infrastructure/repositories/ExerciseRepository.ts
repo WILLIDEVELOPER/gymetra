@@ -1,5 +1,5 @@
 import { getDatabase } from '../database/client';
-import type { Exercise, MuscleGroup, EquipmentType, ExerciseCategory } from '../../domain/models';
+import type { Exercise, MuscleGroup, EquipmentType, ExerciseCategory, ExerciseType } from '../../domain/models';
 import uuid from 'react-native-uuid';
 
 interface ExerciseRow {
@@ -9,6 +9,7 @@ interface ExerciseRow {
   secondary_muscles: string;
   equipment: string;
   category: string;
+  exercise_type: string | null;
   is_custom: number;
   instructions: string | null;
   video_url: string | null;
@@ -24,6 +25,7 @@ function rowToExercise(row: ExerciseRow): Exercise {
     secondaryMuscles: JSON.parse(row.secondary_muscles || '[]'),
     equipment: row.equipment as EquipmentType,
     category: row.category as ExerciseCategory,
+    exerciseType: (row.exercise_type as ExerciseType) ?? 'weight',
     isCustom: row.is_custom === 1,
     instructions: row.instructions ?? undefined,
     videoUrl: row.video_url ?? undefined,
@@ -74,12 +76,13 @@ export const ExerciseRepository = {
     await db.runAsync(
       `INSERT INTO exercises
         (id, name, muscle_group, secondary_muscles, equipment, category,
-         is_custom, instructions, video_url, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         exercise_type, is_custom, instructions, video_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, data.name, data.muscleGroup,
         JSON.stringify(data.secondaryMuscles),
         data.equipment, data.category,
+        data.exerciseType ?? 'weight',
         data.isCustom ? 1 : 0,
         data.instructions ?? null,
         data.videoUrl ?? null,
@@ -87,7 +90,7 @@ export const ExerciseRepository = {
       ]
     );
 
-    return { ...data, id, createdAt: now, updatedAt: now };
+    return { ...data, id, exerciseType: data.exerciseType ?? 'weight', createdAt: now, updatedAt: now };
   },
 
   async update(id: string, data: Partial<Omit<Exercise, 'id' | 'createdAt'>>): Promise<void> {
@@ -120,7 +123,7 @@ export const ExerciseRepository = {
     await db.runAsync('DELETE FROM exercises WHERE id = ? AND is_custom = 1', [id]);
   },
 
-  async bulkInsert(exercises: Omit<Exercise, 'createdAt' | 'updatedAt'>[]): Promise<void> {
+  async bulkInsert(exercises: Omit<Exercise, 'createdAt' | 'updatedAt' | 'exerciseType'>[]): Promise<void> {
     const db = await getDatabase();
     const now = Date.now();
     await db.withTransactionAsync(async () => {
@@ -128,12 +131,13 @@ export const ExerciseRepository = {
         await db.runAsync(
           `INSERT OR IGNORE INTO exercises
             (id, name, muscle_group, secondary_muscles, equipment, category,
-             is_custom, instructions, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             exercise_type, is_custom, instructions, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             ex.id, ex.name, ex.muscleGroup,
             JSON.stringify(ex.secondaryMuscles),
             ex.equipment, ex.category,
+            'weight',
             ex.isCustom ? 1 : 0,
             ex.instructions ?? null,
             now, now,
